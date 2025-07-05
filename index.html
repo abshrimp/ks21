@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaTeX生成</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.6.4/math.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .input-section {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            flex: 1;
+        }
+
+        .input-group h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+
+        .buttons {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 0 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .generate-btn {
+            background-color: #007bff;
+            color: white;
+        }
+
+        button:hover {
+            opacity: 0.8;
+        }
+
+        .output-section h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        #output {
+            width: 100%;
+            height: 400px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            background-color: #f9f9f9;
+            resize: vertical;
+        }
+
+        .error {
+            color: red;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .success {
+            color: green;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        @media (max-width: 768px) {
+            .input-section {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>物理学基礎実験　実験21<br>LaTeX生成ツール</h1>
+
+        <div class="input-section">
+            <div class="input-group">
+                <h3>h0データ (零点測定)</h3>
+                <textarea id="h0Input"></textarea>
+            </div>
+
+            <div class="input-group">
+                <h3>h1データ (屈折後の底面高)</h3>
+                <textarea id="h1Input"></textarea>
+            </div>
+
+            <div class="input-group">
+                <h3>h2データ (上面の高さ)</h3>
+                <textarea id="h2Input"></textarea>
+            </div>
+        </div>
+
+        <div class="buttons">
+            <button class="generate-btn" onclick="generateLaTeX()">LaTeX生成</button>
+        </div>
+
+        <div id="message"></div>
+
+        <div class="output-section">
+            <h3>生成されたLaTeX</h3>
+            <textarea id="output" readonly></textarea>
+        </div>
+    </div>
+
+    <script>
+        function showError(message) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = 'error';
+            messageDiv.textContent = message;
+        }
+
+        function showSuccess(message) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = 'success';
+            messageDiv.textContent = message;
+        }
+
+        function parseInput(input) {
+            return input.split('\n')
+                .map(v => v.trim())
+                .filter(v => v !== '')
+                .map(v => parseFloat(v))
+                .filter(v => !isNaN(v));
+        }
+
+        function convertToLatexScientific(latex) {
+            const scientificRegex = /(\d*\.?\d+)(?:e|E)([+-]?\d+)/g;
+            return latex.replace(scientificRegex, (match, mantissa, exponent) => {
+                const formattedMantissa = mantissa.startsWith('.') ? `0${mantissa}` : mantissa;
+                const formattedExponent = exponent.replace("+", "");
+                return `${formattedMantissa} \\times 10^{${formattedExponent}}`;
+            });
+        }
+
+        function calculateLinearRegression(xValues, yValues, n) {
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+            for (let i = 0; i < n; i++) {
+                sumX = math.add(sumX, xValues[i]);
+                sumY = math.add(sumY, yValues[i]);
+                sumXY = math.add(sumXY, math.multiply(xValues[i], yValues[i]));
+                sumX2 = math.add(sumX2, math.multiply(xValues[i], xValues[i]));
+            }
+
+            const denominator = math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX));
+            const a = math.divide(
+                math.subtract(
+                    math.multiply(sumX2, sumY),
+                    math.multiply(sumX, sumXY)
+                ),
+                denominator
+            );
+            const b = math.divide(
+                math.subtract(
+                    math.multiply(n, sumXY),
+                    math.multiply(sumX, sumY)
+                ),
+                denominator
+            );
+
+            return { a, b, sumX, sumY, sumXY, sumX2 };
+        }
+
+        // 誤差の計算
+        function calculateErrors(n, sumX, sumX2, variance) {
+            const ra = math.multiply(
+                0.6745,
+                math.sqrt(
+                    math.multiply(
+                        math.divide(sumX2, math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX))),
+                        variance
+                    )
+                )
+            );
+            const rb = math.multiply(
+                0.6745,
+                math.sqrt(
+                    math.multiply(
+                        math.divide(n, math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX))),
+                        variance
+                    )
+                )
+            );
+            return { ra, rb };
+        }
+
+        function generateLaTeX() {
+            const h0Input = document.getElementById('h0Input').value.trim();
+            const h1Input = document.getElementById('h1Input').value.trim();
+            const h2Input = document.getElementById('h2Input').value.trim();
+
+            if (!h0Input || !h1Input || !h2Input) {
+                showError('すべての入力欄にデータを入力してください。');
+                return;
+            }
+
+            const h0Values = parseInput(h0Input);
+            const h1Values = parseInput(h1Input);
+            const h2Values = parseInput(h2Input);
+
+            if (h1Values.length !== h2Values.length) {
+                showError('h1とh2のデータ数を合わせてください。');
+                returnAdmin();
+                return;
+            }
+            if (h0Values.length === 0) {
+                showError('有効なh0データがありません。');
+                return;
+            }
+
+            let latex = generateLaTeXOutput(h0Values, h1Values, h2Values);
+            latex = convertToLatexScientific(latex);
+            document.getElementById('output').value = latex;
+            showSuccess('LaTeXコードが正常に生成されました。');
+        }
+
+        function generateLaTeXOutput(h0Values, h1Values, h2Values) {
+            const n = h1Values.length;
+            let latex = `\\documentclass[dvipdfmx,a4paper,12pt]{bxjsarticle}
+\\usepackage{geometry}
+\\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\\usepackage{amsmath, amssymb, amsfonts}
+\\usepackage{graphicx}
+\\usepackage{booktabs}
+\\usepackage{array}
+\\usepackage{multicol}
+\\usepackage{float}
+\\usepackage{tikz}
+\\usetikzlibrary{intersections, calc, arrows}
+\\usepackage{pgfplots}
+\\pgfplotsset{compat=1.18}
+\\usepackage{amsmath}
+\\usepackage{caption}
+
+\\begin{document}
+
+\\subsection{ガラスの屈折率の測定}
+\\begin{table}[H]
+\\centering
+\\caption{ガラスの屈折率の測定における零点測定}
+\\begin{tabular}{cc}
+\\toprule
+測定回 & 零点測定値 \\\\
+$i$ & $h_{z,i}$ mm \\\\
+\\midrule
+`;
+
+            // 零点測定値のテーブル
+            let h0Sum = 0;
+            for (let i = 0; i < h0Values.length; i++) {
+                h0Sum = math.add(h0Sum, h0Values[i]);
+                const row = i === h0Values.length - 1 ? `$n=${h0Values.length}$` : `${i + 1}`;
+                latex += `${row} & ${math.format(h0Values[i], { precision: 10 })} \\\\\n`;
+            }
+
+            const h0 = math.divide(h0Sum, h0Values.length);
+            latex += `\\midrule
+合計 & ${math.format(h0Sum, { precision: 10 })} \\\\
+\\bottomrule
+\\end{tabular}
+\\label{tab:zero_point_measurement}
+\\end{table}
+
+以上より $h_z$ の最確値 $h_0$ は、計算途中につき有効数字を多くとって
+
+$$ h_0 = \\frac{${math.format(h0Sum, { precision: 10 })}}{${h0Values.length}} = ${math.format(h0, { precision: 10 })} \\text{ mm} $$
+
+\\begin{table}[H]
+\\centering
+\\caption{ガラスの屈折率の測定}
+\\begin{tabular}{ccccccc}
+\\toprule
+測定回 & 屈折後の & 上面の & 高さの & 板の & 厚さと & 高さの \\\\
+ & 底面高 & 高さ & 差 & 厚さ & 高さの積 & 二乗 \\\\
+$i$ & $h_{1,i}$ mm & $h_{2,i}$ mm & $x_{i}$ mm & $y_{i}$ mm & $x_i y_i$ mm$^2$ & \${x_i}^2$ mm$^2$ \\\\
+\\midrule
+`;
+
+            // 高さデータのテーブル
+            let xValues = [], yValues = [];
+            let sum = [0, 0, 0, 0]; // sumX, sumY, sumXY, sumX2
+            for (let i = 0; i < n; i++) {
+                const x = math.subtract(h2Values[i], h1Values[i]);
+                const y = math.subtract(h2Values[i], h0);
+                xValues.push(x);
+                yValues.push(y);
+                const row = i === n - 1 ? `$n=${n}$` : `${i + 1}`;
+                const data = [
+                    row,
+                    math.format(h1Values[i], { precision: 10 }),
+                    math.format(h2Values[i], { precision: 10 }),
+                    math.format(x, { precision: 10 }),
+                    math.format(y, { precision: 10 }),
+                    math.format(math.multiply(x, y), { precision: 10 }),
+                    math.format(math.multiply(x, x), { precision: 10 })
+                ];
+                latex += `${data.join(" & ")} \\\\\n`;
+                sum[0] = math.add(sum[0], x);
+                sum[1] = math.add(sum[1], y);
+                sum[2] = math.add(sum[2], math.multiply(x, y));
+                sum[3] = math.add(sum[3], math.multiply(x, x));
+            }
+
+            latex += `\\midrule
+合計 & & & ${math.format(sum[0], { precision: 10 })} & ${math.format(sum[1], { precision: 10 })} & ${math.format(sum[2], { precision: 10 })} & ${math.format(sum[3], { precision: 10 })} \\\\
+\\bottomrule
+\\end{tabular}
+\\label{tab:refractive_index_measurement}
+\\end{table}
+
+`;
+
+            // 線形回帰の計算
+            const { a, b, sumX, sumY, sumXY, sumX2 } = calculateLinearRegression(xValues, yValues, n);
+
+            latex += `
+$$a = \\frac{\\sum x_i^2 \\cdot \\sum y_i - \\sum x_i \\cdot \\sum x_i y_i}{n \\sum x_i^2 - (\\sum x_i)^2} = \\frac{${math.format(sumX2, { precision: 10 })} \\times ${math.format(sumY, { precision: 10 })} - ${math.format(sumX, { precision: 10 })} \\times ${math.format(sumXY, { precision: 10 })}}{${n} \\times ${math.format(sumX2, { precision: 10 })} - (${math.format(sumX, { precision: 10 })})^2} $$
+
+$$ = \\frac{${math.format(math.multiply(sumX2, sumY), { precision: 10 })} - ${math.format(math.multiply(sumX, sumXY), { precision: 10 })}}{${math.format(math.multiply(n, sumX2), { precision: 10 })} - ${math.format(math.multiply(sumX, sumX), { precision: 10 })}} = \\frac{${math.format(math.subtract(math.multiply(sumX2, sumY), math.multiply(sumX, sumXY)), { precision: 10 })}}{${math.format(math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)), { precision: 10 })}} \\approx ${math.format(a, { notation: 'fixed', precision: 5 })} \\text{ mm}$$
+
+$$b = \\frac{n \\sum x_i y_i - \\sum x_i \\cdot \\sum y_i}{n \\sum x_i^2 - (\\sum x_i)^2} = \\frac{${n} \\times ${math.format(sumXY, { precision: 10 })} - ${math.format(sumX, { precision: 10 })} \\times ${math.format(sumY, { precision: 10 })}}{${n} \\times ${math.format(sumX2, { precision: 10 })} - (${math.format(sumX, { precision: 10 })})^2} $$
+
+$$ = \\frac{${math.format(math.multiply(n, sumXY), { precision: 10 })} - ${math.format(math.multiply(sumX, sumY), { precision: 10 })}}{${math.format(math.multiply(n, sumX2), { precision: 10 })} -  ${math.format(math.multiply(sumX, sumX), { precision: 10 })}} = \\frac{${math.format(math.subtract(math.multiply(n, sumXY), math.multiply(sumX, sumY)), { precision: 10 })}}{${math.format(math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)), { precision: 10 })}} \\approx ${math.format(b, { notation: 'fixed', precision: 5 })} $$
+
+`;
+
+            latex += `
+$x = x_i$ のときの回帰直線上の値を $z_i = a + bx_i$ 、残差を $v_i = y_i - z_i$ とすると
+
+\\begin{table}[H]
+\\centering
+\\caption{ガラスの屈折率の測定}
+\\begin{tabular}{ccccc}
+\\toprule
+測定回 & 板の厚さ & 直線上の値 & 残差 & 残差の二乗 \\\\
+$i$ & $y_i$ mm & $z_i$ mm & $v_i \\times 10^2 $ mm & \${v_i}^2 \\times 10^4 $ mm$^2$ \\\\
+\\midrule
+`;
+
+            let vSum100 = 0;
+            let v2Sum = 0;
+            for (let i = 0; i < n; i++) {
+                const z = math.add(a, math.multiply(b, xValues[i]));
+                const v = parseFloat(math.format(math.multiply(math.subtract(yValues[i], parseFloat(math.format(z, { notation: 'fixed', precision: 4 }))), 100), { notation: 'fixed', precision: 2 }));
+                vSum100 += Math.round(v * 100);
+                v2Sum += math.multiply(v, v);
+                const row = i === n - 1 ? `$n=${n}$` : `${i + 1}`;
+                latex += `${row} & ${math.format(yValues[i], { precision: 10 })} & ${math.format(z, { notation: 'fixed', precision: 4 })} & ${math.format(v, { notation: 'fixed', precision: 2 })} & ${math.format(math.multiply(v, v), { notation: 'fixed', precision: 4 })} \\\\\n`;
+            }
+
+            const variance = math.divide(math.divide(v2Sum, math.subtract(n, 2)), 10000);
+
+            latex += `\\midrule
+合計 & & & ${math.format(math.divide(vSum100, 100), { precision: 2 })} & $${math.format(v2Sum, { notation: 'fixed', precision: 4 })}$ \\\\
+\\bottomrule
+\\end{tabular}
+\\label{tab:residuals}
+\\end{table}
+
+$$\\frac{\\sum v_i^2}{n-2} = \\frac{${math.format(v2Sum, { notation: 'fixed', precision: 4 })} \\times 10^{-4}}{${n - 2}} \\approx ${math.format(variance, { notation: 'fixed', precision: 5 })} \\text{ mm}^2 $$
+
+`;
+
+            // 誤差の計算
+            const { ra, rb } = calculateErrors(n, sumX, sumX2, variance);
+
+            latex += `
+$$ r_a = 0.6745 \\sqrt{\\frac{\\sum x_i^2}{n \\sum x_i^2 - (\\sum x_i)^2} \\cdot \\frac{\\sum v_i^2}{n-2}} = 0.6745 \\sqrt{\\frac{${math.format(sumX2, { precision: 10 })}}{${math.format(math.multiply(n, sumX2), { precision: 10 })} - ${math.format(math.multiply(sumX, sumX), { precision: 10 })}} \\times ${math.format(variance, { notation: 'fixed', precision: 5 })}} $$
+
+$$ = 0.6745 \\sqrt{\\frac{${math.format(sumX2, { precision: 10 })}}{${math.format(math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)), { precision: 10 })}} \\times ${math.format(variance, { notation: 'fixed', precision: 5 })}} \\approx 0.6745 \\sqrt{${math.format(math.divide(sumX2, (math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)))), { notation: 'fixed', precision: 5 })} \\times ${math.format(variance, { notation: 'fixed', precision: 5 })}} \\text{ mm}$$
+
+$$ \\approx 0.6745 \\times ${math.format(math.sqrt(math.multiply(math.divide(sumX2, (math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)))), variance)), { notation: 'fixed', precision: 5 })} \\approx ${math.format(ra, { notation: 'fixed', precision: 5 })} \\approx ${math.format(ra, { notation: 'fixed', precision: 3 })} \\text{ mm}$$
+
+$$ r_b = 0.6745 \\sqrt{\\frac{n}{n \\sum x_i^2 - (\\sum x_i)^2} \\cdot \\frac{\\sum v_i^2}{n-2}} = 0.6745 \\sqrt{\\frac{${n}}{${math.format(math.multiply(n, sumX2), { precision: 10 })} - ${math.format(math.multiply(sumX, sumX), { precision: 10 })}} \\times ${math.format(variance, { notation: 'fixed', precision: 5 })}} $$
+
+$$ = 0.6745 \\sqrt{\\frac{${n}}{${math.format(math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)), { precision: 10 })}} \\times ${math.format(variance, { notation: 'fixed', precision: 5 })}} \\approx 0.6745 \\sqrt{${math.format(math.divide(n, (math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)))), { notation: 'fixed', precision: 5 })} \\times ${math.format(variance, { notation: 'fixed', precision: 5 })}} $$
+
+$$ \\approx 0.6745 \\times ${math.format(math.sqrt(math.multiply(math.divide(n, (math.subtract(math.multiply(n, sumX2), math.multiply(sumX, sumX)))), variance)), { notation: 'fixed', precision: 5 })} \\approx ${math.format(rb, { notation: 'fixed', precision: 5 })} \\approx ${math.format(rb, { notation: 'fixed', precision: 3 })} $$
+
+\\begin{figure}[H]
+    \\centering
+    \\begin{tikzpicture}
+        \\begin{axis}[
+            title={},
+            xlabel={高さの差 ($x_i$) [mm]},
+            ylabel={板の厚さ ($y_i$) [mm]},
+            xmin=0, xmax=${math.format(math.max(xValues) + 1, { precision: 10 })},
+            ymin=0, ymax=${math.format(math.max(yValues) + 1, { precision: 10 })},
+            xtick distance=1,
+            ytick distance=1,
+            yticklabel style={/pgf/number format/fixed, /pgf/number format/precision=2},
+            grid=both,
+            grid style={dashed, gray!50},
+            legend style={at={(1.02,1)},anchor=north west},
+        ]
+        \\addplot+[
+            only marks,
+            mark=o,
+            black,
+            mark options={fill=white, draw=black, thick}
+        ] table [x=x_data, y=y_data] {
+            x_data y_data
+`;
+
+            // データポイント
+            for (let i = 0; i < n; i++) {
+                latex += `            ${math.format(xValues[i], { precision: 10 })} ${math.format(yValues[i], { precision: 10 })}\n`;
+            }
+
+            latex += `        };
+        \\addlegendentry{測定データ ($y_i$)}
+        \\pgfmathsetmacro{\\yfitstart}{${math.format(a, { precision: 10 })} + ${math.format(b, { precision: 10 })}*0}
+        \\pgfmathsetmacro{\\yfitend}{${math.format(a, { precision: 10 })} + ${math.format(b, { precision: 10 })}*${math.format(math.max(xValues) + 1, { precision: 10 })}}
+        \\addplot+[
+            black,
+            very thick,
+            solid,
+            mark=none
+        ] coordinates {
+            (0, \\yfitstart)
+            (${math.format(math.max(xValues) + 1, { precision: 10 })}, \\yfitend)
+        };
+        \\addlegendentry{回帰直線$y=${math.format(a, { precision: 4 })} + ${math.format(b, { precision: 4 })}x$}
+        
+        \\end{axis}
+    \\end{tikzpicture}
+    \\caption{ガラスの屈折率の測定：像が見える高さと板の厚さの関係と回帰直線}
+    \\label{fig:thickness_measurement_pgfplots}
+\\end{figure}
+
+\\end{document}
+`;
+
+            return latex;
+        }
+
+        window.onload = function () {
+            document.getElementById('h0Input').value = '55.07\n54.99\n55.03\n54.97\n54.93';
+            document.getElementById('h1Input').value = '55.14\n55.51\n55.91\n56.32\n56.51\n56.78\n57.15\n57.42\n57.77\n57.99';
+            document.getElementById('h2Input').value = '55.89\n56.71\n57.76\n58.66\n59.57\n60.52\n61.39\n61.99\n62.98\n64.03';
+        };
+    </script>
+</body>
+
+</html>
